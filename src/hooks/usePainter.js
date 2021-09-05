@@ -1,32 +1,41 @@
 import { useCallback, useRef, useState } from "react";
 
 const usePainter = () => {
-  const canvas = useRef();
-  // State
-  const [isReady, setIsReady] = useState(false);
-  const [isRegularMode, setIsRegularMode] = useState(true);
-  const [isAutoWidth, setIsAutoWidth] = useState(false);
-  const [isEraser, setIsEraser] = useState(false);
-  const [currentColor, setCurrentColor] = useState("#000000");
-  const [currentWidth, setCurrentWidth] = useState(50);
-
-  // Refs
   const autoWidth = useRef(false);
-  const selectedSaturation = useRef(100);
-  const selectedLightness = useRef(50);
-  const selectedColor = useRef("#000000");
-  const selectedLineWidth = useRef(50);
-  const lastX = useRef(0);
-  const lastY = useRef(0);
+  const canvas = useRef();
+  const direction = useRef(true);
   const hue = useRef(0);
   const isDrawing = useRef(false);
-  const direction = useRef(true);
-  const isRegularPaintMode = useRef(true);
   const isEraserMode = useRef(false);
+  const isRegularPaintMode = useRef(true);
+  const lastX = useRef(0);
+  const lastY = useRef(0);
+  const selectedColor = useRef("#000000");
+  const selectedLightness = useRef(50);
+  const selectedLineWidth = useRef(50);
+  const selectedSaturation = useRef(100);
   const ctx = useRef(canvas?.current?.getContext("2d"));
 
+  // State
+  const [state, setState] = useState({
+    currentColor: "#000000",
+    currentWidth: 50,
+    isAutoWidth: false,
+    isEraser: false,
+    isReady: false,
+    isRegularMode: true,
+  });
+
+  const isNotMounted = ref => {
+    return !ref || !ref.current;
+  };
+
+  const isMounted = ref => {
+    return ref && ref.current;
+  };
+
   const drawOnCanvas = useCallback(event => {
-    if (!ctx || !ctx.current) {
+    if (isNotMounted(ctx)) {
       return;
     }
     ctx.current.beginPath();
@@ -42,40 +51,55 @@ const usePainter = () => {
   }, []);
 
   const dynamicLineWidth = useCallback(() => {
-    if (!ctx || !ctx.current) {
+    if (isNotMounted(ctx)) {
       return;
     }
     if (ctx.current.lineWidth > 90 || ctx.current.lineWidth < 10) {
       direction.current = !direction.current;
     }
+
     direction.current ? ctx.current.lineWidth++ : ctx.current.lineWidth--;
-    setCurrentWidth(ctx.current.lineWidth);
+
+    setState(prev => {
+      return {
+        ...prev,
+        currentWidth: ctx.current.lineWidth,
+      };
+    });
   }, []);
 
   const drawNormal = useCallback(
     e => {
-      if (!isDrawing.current || !ctx.current) return;
-      if (isRegularPaintMode.current || isEraserMode.current) {
-        ctx.current.strokeStyle = selectedColor.current;
-        setCurrentColor(selectedColor.current);
-        autoWidth.current && !isEraserMode.current
-          ? dynamicLineWidth()
-          : (ctx.current.lineWidth = selectedLineWidth.current);
-        isEraserMode.current
-          ? (ctx.current.globalCompositeOperation = "destination-out")
-          : (ctx.current.globalCompositeOperation = "source-over");
-      } else {
-        setCurrentColor(
-          `hsl(${hue.current},${selectedSaturation.current}%,${selectedLightness.current}%)`
-        );
-        ctx.current.strokeStyle = `hsl(${hue.current},${selectedSaturation.current}%,${selectedLightness.current}%)`;
-        ctx.current.globalCompositeOperation = "source-over";
-        hue.current++;
-        if (hue.current >= 360) hue.current = 0;
-        autoWidth.current
-          ? dynamicLineWidth()
-          : (ctx.current.lineWidth = selectedLineWidth.current);
+      if (isNotMounted(isDrawing) || isNotMounted(ctx)) {
+        return;
       }
+
+      setState(prev => {
+        const copy = { ...prev };
+        if (isMounted(isRegularPaintMode) || isMounted(isEraserMode)) {
+          ctx.current.strokeStyle = selectedColor.current;
+          copy.currentColor = selectedColor.current;
+          autoWidth.current && !isEraserMode.current
+            ? dynamicLineWidth()
+            : (ctx.current.lineWidth = selectedLineWidth.current);
+          isEraserMode.current
+            ? (ctx.current.globalCompositeOperation = "destination-out")
+            : (ctx.current.globalCompositeOperation = "source-over");
+        } else {
+          copy.currentColor = `hsl(${hue.current},${selectedSaturation.current}%,${selectedLightness.current}%)`;
+          ctx.current.strokeStyle = `hsl(${hue.current},${selectedSaturation.current}%,${selectedLightness.current}%)`;
+          ctx.current.globalCompositeOperation = "source-over";
+
+          hue.current++;
+          if (hue.current >= 360) hue.current = 0;
+          autoWidth.current
+            ? dynamicLineWidth()
+            : (ctx.current.lineWidth = selectedLineWidth.current);
+        }
+
+        return copy;
+      });
+
       drawOnCanvas(e);
     },
     [drawOnCanvas, dynamicLineWidth]
@@ -87,7 +111,7 @@ const usePainter = () => {
 
   const init = useCallback(() => {
     ctx.current = canvas?.current?.getContext("2d");
-    if (canvas && canvas.current && ctx && ctx.current) {
+    if (isMounted(canvas) && isMounted(ctx)) {
       canvas.current.addEventListener("mousedown", handleMouseDown);
       canvas.current.addEventListener("mousemove", drawNormal);
       canvas.current.addEventListener("mouseup", stopDrawing);
@@ -98,94 +122,126 @@ const usePainter = () => {
       ctx.current.lineJoin = "round";
       ctx.current.lineCap = "round";
       ctx.current.lineWidth = 10;
-      setIsReady(true);
+
+      setState(prev => {
+        return {
+          ...prev,
+          isReady: true,
+        };
+      });
     }
   }, [drawNormal, handleMouseDown, stopDrawing]);
 
   const handleRegularMode = useCallback(() => {
-    setIsRegularMode(true);
-    isEraserMode.current = false;
-    setIsEraser(false);
-    isRegularPaintMode.current = true;
+    setState(prev => {
+      const copy = { ...prev };
+      copy.isRegularMode = true;
+      isEraserMode.current = false;
+      copy.isEraser = false;
+      isRegularPaintMode.current = true;
+      return copy;
+    });
   }, []);
 
   const handleSpecialMode = useCallback(() => {
-    setIsRegularMode(false);
-    isEraserMode.current = false;
-    setIsEraser(false);
-    isRegularPaintMode.current = false;
+    setState(prev => {
+      const copy = { ...prev };
+      copy.isRegularMode = false;
+      isEraserMode.current = false;
+      copy.isEraser = false;
+      isRegularPaintMode.current = false;
+      return copy;
+    });
   }, []);
 
   const handleColor = e => {
-    setCurrentColor(e.currentTarget.value);
-    selectedColor.current = e.currentTarget.value;
+    setState(prev => {
+      const copy = { ...prev };
+      selectedColor.current = e.currentTarget.value;
+      copy.currentColor = e.currentTarget.value;
+
+      return copy;
+    });
   };
 
   const handleWidth = e => {
-    setCurrentWidth(e.currentTarget.value);
-    selectedLineWidth.current = e.currentTarget.value;
+    setState(prev => {
+      const copy = { ...prev };
+      selectedLineWidth.current = e.currentTarget.value;
+      copy.currentWidth = e.currentTarget.value;
+
+      return copy;
+    });
   };
 
   const handleClear = useCallback(() => {
-    if (!ctx || !ctx.current || !canvas || !canvas.current) {
+    if (isNotMounted(ctx) || isNotMounted(canvas)) {
       return;
     }
     ctx.current.clearRect(0, 0, canvas.current.width, canvas.current.height);
   }, []);
 
   const handleEraserMode = () => {
-    autoWidth.current = false;
-    setIsAutoWidth(false);
-    setIsRegularMode(true);
-    isEraserMode.current = true;
-    setIsEraser(true);
+    setState(prev => {
+      const copy = { ...prev };
+      autoWidth.current = false;
+      copy.isAutoWidth = false;
+      copy.isRegularMode = true;
+      copy.isEraser = true;
+      isEraserMode.current = true;
+
+      return copy;
+    });
   };
 
   const setCurrentSaturation = e => {
-    setCurrentColor(
-      `hsl(${hue.current},${e.currentTarget.value}%,${selectedLightness.current}%)`
-    );
-    selectedSaturation.current = e.currentTarget.value;
+    setState(prev => {
+      const copy = { ...prev };
+      selectedSaturation.current = e.currentTarget.value;
+      copy.currentColor = `hsl(${hue.current},${e.currentTarget.value}%,${selectedLightness.current}%)`;
+
+      return copy;
+    });
   };
 
   const setCurrentLightness = e => {
-    setCurrentColor(
-      `hsl(${hue.current},${selectedSaturation.current}%,${e.currentTarget.value}%)`
-    );
-    selectedLightness.current = e.currentTarget.value;
+    setState(prev => {
+      const copy = { ...prev };
+      selectedLightness.current = e.currentTarget.value;
+      copy.currentColor = `hsl(${hue.current},${selectedSaturation.current}%,${e.currentTarget.value}%)`;
+
+      return copy;
+    });
   };
 
   const setAutoWidth = e => {
-    autoWidth.current = e.currentTarget.checked;
-    setIsAutoWidth(e.currentTarget.checked);
-    if (!e.currentTarget.checked) {
-      setCurrentWidth(selectedLineWidth.current);
-    } else {
-      setCurrentWidth(ctx?.current?.lineWidth ?? selectedLineWidth.current);
-    }
+    setState(prev => {
+      const copy = { ...prev };
+      autoWidth.current = e.currentTarget.checked;
+      copy.isAutoWidth = e.currentTarget.checked;
+      copy.currentWidth = !e.currentTarget.checked
+        ? selectedLineWidth.current
+        : ctx?.current?.lineWidth ?? selectedLineWidth.current;
+      return copy;
+    });
   };
 
   return [
     {
       canvas,
-      isReady,
-      currentWidth,
-      currentColor,
-      isRegularMode,
-      isAutoWidth,
-      isEraser,
+      ...state,
     },
     {
-      init,
+      handleClear,
+      handleColor,
+      handleEraserMode,
       handleRegularMode,
       handleSpecialMode,
-      handleColor,
       handleWidth,
-      handleClear,
-      handleEraserMode,
+      init,
       setAutoWidth,
-      setCurrentSaturation,
       setCurrentLightness,
+      setCurrentSaturation,
     },
   ];
 };
